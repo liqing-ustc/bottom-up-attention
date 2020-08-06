@@ -41,7 +41,28 @@ MAX_BOXES = 100
 def load_image_ids(split_name, data_root):
     ''' Load a list of (path,image_id tuples). Modify this to suit your data locations. '''
     split = []
-    if split_name == 'conceptual_captions_train':
+    if split_name == 'coco_test2014':
+      with open('/data/coco/annotations/image_info_test2014.json') as f:
+        data = json.load(f)
+        for item in data['images']:
+          image_id = int(item['id'])
+          filepath = os.path.join('/data/test2014/', item['file_name'])
+          split.append((filepath,image_id))
+    elif split_name == 'coco_test2015':
+      with open('/data/coco/annotations/image_info_test2015.json') as f:
+        data = json.load(f)
+        for item in data['images']:
+          image_id = int(item['id'])
+          filepath = os.path.join('/data/test2015/', item['file_name'])
+          split.append((filepath,image_id))
+    elif split_name == 'genome':
+      with open('/data/visualgenome/image_data.json') as f:
+        for item in json.load(f):
+          image_id = int(item['image_id'])
+          filepath = os.path.join('/data/visualgenome/', item['url'].split('rak248/')[-1])
+          split.append((filepath,image_id))
+
+    elif split_name == 'coco_trainval':
       with open(os.path.join(data_root, 'utils/train.json')) as f:
         for cnt, line in enumerate(f):  
           d = json.loads(line)
@@ -49,6 +70,17 @@ def load_image_ids(split_name, data_root):
           filepath = d['image']
           image_id = int(filepath.split('/')[-1][:-4])
           split.append((filepath,image_id))
+
+    elif split_name == 'conceptual_captions_train':
+      with open(os.path.join(data_root, 'utils/train.json')) as f:
+        for cnt, line in enumerate(f):  
+          d = json.loads(line)
+          cap = d['caption']
+          filepath = d['image']
+          image_id = int(filepath.split('/')[-1][:-4])
+          split.append((filepath,image_id))
+
+
     elif split_name == 'conceptual_captions_val':
       with open(os.path.join(data_root, 'utils/val.json')) as f:
         for cnt, line in enumerate(f):  
@@ -65,6 +97,9 @@ def load_image_ids(split_name, data_root):
 def get_detections_from_im(net, im_file, image_id, ziphelper, data_root, conf_thresh=0.5):
     zip_image = ziphelper.imread(str(os.path.join(data_root, im_file)))
     im = cv2.cvtColor(np.array(zip_image), cv2.COLOR_RGB2BGR)
+    if np.max(im.shape) < 20:
+        print("image too small: ", image_id)
+        return None
     scores, boxes, attr_scores, rel_scores = im_detect(net, im)
 
     # Keep the original boxes, don't worry about the regresssion bbox outputs
@@ -146,8 +181,8 @@ def generate_tsv(gpu_id, prototxt, weights, image_ids, data_root, outfolder):
         for ids in wanted_ids:
             json_file = "{:08d}.json".format(ids)
             if os.path.exists(os.path.join(outfolder, json_file)):
-                found_ids.add(int(item['image_id']))
-
+                #found_ids.add(int(item['image_id']))
+                found_ids.add(ids)
     missing = wanted_ids - found_ids
     if len(missing) == 0:
         print 'GPU {:d}: already completed {:d}'.format(gpu_id, len(image_ids))
@@ -165,8 +200,10 @@ def generate_tsv(gpu_id, prototxt, weights, image_ids, data_root, outfolder):
             if int(image_id) in missing:
                 _t['misc'].tic()
                 json_file = "{:08d}.json".format(image_id)
-                with open(os.path.join(outfolder, json_file), 'w') as f:
-                    json.dump(get_detections_from_im(net, im_file, image_id, ziphelper, data_root), f)
+                res = get_detections_from_im(net, im_file, image_id, ziphelper, data_root)
+                if res != None:
+                    with open(os.path.join(outfolder, json_file), 'w') as f:
+                        json.dump(res, f)
                 _t['misc'].toc()
                 if (count % 100) == 0:
                     print 'GPU {:d}: {:d}/{:d} {:.3f}s (projected finish: {:.2f} hours)' \
